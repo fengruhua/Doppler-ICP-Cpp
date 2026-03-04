@@ -30,6 +30,7 @@ find_package(glog REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(GTSAM REQUIRED)
+find_package(rosbag2_cpp REQUIRED)
 
 # ========================
 # OpenMP
@@ -50,16 +51,16 @@ set(COMMON_SOURCES
 )
 
 # ========================
-# 1️⃣ DICP executable
+# 1 DICP executable
 # ========================
 
-add_executable(doppler_icp
+add_executable(doppler_icp_node
     src/dicp_node.cpp
     ${COMMON_SOURCES}
 )
 
 # ========================
-# 2️⃣ Dataset executable
+# 2 Dataset executable
 # ========================
 
 add_executable(dataset_node
@@ -68,10 +69,19 @@ add_executable(dataset_node
 )
 
 # ========================
+# 3 bin_to_bag executable
+# ========================
+
+add_executable(bin_to_bag_node
+    src/bin_to_bag.cpp
+    ${COMMON_SOURCES}
+)
+
+# ========================
 # Include
 # ========================
 
-target_include_directories(doppler_icp PRIVATE
+target_include_directories(doppler_icp_node PRIVATE
     include
     ${EIGEN3_INCLUDE_DIR}
     ${PCL_INCLUDE_DIRS}
@@ -87,7 +97,7 @@ target_include_directories(dataset_node PRIVATE
 # ROS dependencies
 # ========================
 
-ament_target_dependencies(doppler_icp
+ament_target_dependencies(doppler_icp_node
     rclcpp
     sensor_msgs
     nav_msgs
@@ -101,11 +111,17 @@ ament_target_dependencies(dataset_node
     sensor_msgs
 )
 
+ament_target_dependencies(bin_to_bag_node
+  rclcpp
+  sensor_msgs
+  rosbag2_cpp
+)
+
 # ========================
 # Link libraries
 # ========================
 
-target_link_libraries(doppler_icp
+target_link_libraries(doppler_icp_node
     ${PCL_LIBRARIES}
     yaml-cpp
     glog::glog
@@ -117,7 +133,7 @@ target_link_libraries(dataset_node
 )
 
 if(OpenMP_CXX_FOUND)
-    target_link_libraries(doppler_icp OpenMP::OpenMP_CXX)
+    target_link_libraries(doppler_icp_node OpenMP::OpenMP_CXX)
     target_link_libraries(dataset_node OpenMP::OpenMP_CXX)
 endif()
 
@@ -126,13 +142,14 @@ endif()
 # ========================
 
 install(TARGETS
-    doppler_icp
+    doppler_icp_node
     dataset_node
+    bin_to_bag_node
     DESTINATION lib/${PROJECT_NAME}
 )
 
-# install(DIRECTORY launch config rviz_cfg
-#     DESTINATION share/${PROJECT_NAME}
-# )
+install(DIRECTORY launch/
+    DESTINATION share/${PROJECT_NAME}
+)
 
 ament_package()
