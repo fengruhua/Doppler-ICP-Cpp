@@ -5,7 +5,7 @@
   <description>ROS2 Doppler-ICP implementation</description>
 
   <!-- 必须添加 maintainer -->
-  <maintainer email="fengruhua@example.com">fengruhua</maintainer>
+  <maintainer email="fffffengruhua@163.com">fengruhua</maintainer>
 
   <!-- 必须添加 license -->
   <license>MIT</license>
