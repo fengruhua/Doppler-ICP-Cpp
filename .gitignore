@@ -42,3 +42,4 @@
 
 # dataset
 dataset/*
+dataset-rosbag/*
