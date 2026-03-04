@@ -41,4 +41,4 @@
 *.dwo
 
 # dataset
-./dataset
+../dataset
