@@ -82,7 +82,7 @@ convertToROSMsg(const std::vector<PointXYZD>& points, double timestamp_sec)
         "x", 1, sensor_msgs::msg::PointField::FLOAT32,
         "y", 1, sensor_msgs::msg::PointField::FLOAT32,
         "z", 1, sensor_msgs::msg::PointField::FLOAT32,
-        "intensity", 1, sensor_msgs::msg::PointField::FLOAT32
+        "doppler", 1, sensor_msgs::msg::PointField::FLOAT32
     );
 
     modifier.resize(points.size());
@@ -90,7 +90,7 @@ convertToROSMsg(const std::vector<PointXYZD>& points, double timestamp_sec)
     sensor_msgs::PointCloud2Iterator<float> iter_x(msg, "x");
     sensor_msgs::PointCloud2Iterator<float> iter_y(msg, "y");
     sensor_msgs::PointCloud2Iterator<float> iter_z(msg, "z");
-    sensor_msgs::PointCloud2Iterator<float> iter_i(msg, "intensity");
+    sensor_msgs::PointCloud2Iterator<float> iter_i(msg, "doppler");
 
     for (size_t i = 0; i < points.size(); ++i, ++iter_x, ++iter_y, ++iter_z, ++iter_i)
     {
@@ -120,7 +120,7 @@ void show_progress(size_t current, size_t total) {
         else std::cout << " ";
     }
     // std::cout << "] " << int(progress * 100.0) << "%\r" << std::flush;
-    std::cout << "] " << int(progress * 100.0) << std::flush;
+    std::cout << "] " << int(progress * 100.0) << std::endl;
 }
 
 int main(int argc, char **argv)

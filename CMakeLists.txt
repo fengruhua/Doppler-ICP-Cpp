@@ -46,8 +46,8 @@ endif()
 # ========================
 
 set(COMMON_SOURCES
-    include/registration.cpp
-    include/utils.cpp
+    src/dicp/optimizer.cpp
+    src/dicp/dicp.cpp
 )
 
 # ========================
@@ -74,7 +74,6 @@ add_executable(dataset_node
 
 add_executable(bin_to_bag_node
     src/bin_to_bag.cpp
-    ${COMMON_SOURCES}
 )
 
 # ========================
@@ -88,6 +87,12 @@ target_include_directories(doppler_icp_node PRIVATE
 )
 
 target_include_directories(dataset_node PRIVATE
+    include
+    ${EIGEN3_INCLUDE_DIR}
+    ${PCL_INCLUDE_DIRS}
+)
+
+target_include_directories(bin_to_bag_node PRIVATE
     include
     ${EIGEN3_INCLUDE_DIR}
     ${PCL_INCLUDE_DIRS}

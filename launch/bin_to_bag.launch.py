@@ -18,7 +18,7 @@
 
 # The PointCloud2 messages in the bag files will have the following fields:
 #     - x, y, z: float32 (point coordinates)
-#     - intensity: float32 (Doppler velocity)
+#     - doppler: float32 (Doppler velocity)
 
 # The dataset structure is as follows:
 
@@ -48,7 +48,7 @@ def generate_launch_description():
                 # the input directory containing the binary files
                 './Doppler-ICP-Cpp/dataset/carla-town05-curved-walls/point_clouds',
                 # the output directory for the generated bag files
-                './Doppler-ICP-Cpp/dataset/dataset-rosbag/carla-town05-curved-walls'
+                './Doppler-ICP-Cpp/dataset-rosbag/carla-town05-curved-walls'
             ],
             output='screen'
         )

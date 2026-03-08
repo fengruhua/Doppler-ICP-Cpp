@@ -10,7 +10,7 @@
 
 # The PointCloud2 messages will have the following fields:
 #     - x, y, z: float32 (point coordinates)
-#     - intensity: float32 (Doppler velocity)
+#     - doppler: float32 (Doppler velocity)
 
 # "data_path" : The directory containing the binary point cloud files. 
 
