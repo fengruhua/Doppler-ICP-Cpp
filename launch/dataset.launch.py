@@ -49,7 +49,7 @@ def generate_launch_description():
         name='doppler_dataset',
         parameters=[
             {'data_path': './Doppler-ICP-Cpp/dataset/carla-town04-straight-walls/point_clouds'},
-            {'frame_rate': 10.0},
+            {'frame_rate': 2.0},
             {'point_topic': '/points'},
             {'frame_id': '/map'},
             {'loop': False}

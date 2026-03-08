@@ -1,0 +1,21 @@
+dicp_node:
+  ros__parameters:
+    doppler_mode: "adaptive"     # off / fixed / adaptive
+    doppler_weight: 0.01         # fixed 模式用
+    doppler_weight_max: 0.01     # adaptive 模式最大值
+
+    use_extrinsic: false
+    rebase_to_origin: false
+
+    extrinsic.tx: 1.419999122619629
+    extrinsic.ty: 0.23999977111816406
+    extrinsic.tz: 1.369999885559082
+    extrinsic.qx: 0.0
+    extrinsic.qy: 0.0
+    extrinsic.qz: 0.0
+    extrinsic.qw: 1.0
+
+    file_path: "./dicp_path.txt"
+
+    topic_name: "/points"
+    topic_hz: 10.0

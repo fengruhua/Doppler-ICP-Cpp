@@ -29,11 +29,23 @@ private:
     std::vector<Eigen::Matrix4d> pose_;
 
     std::atomic_bool init_flag;
-    float doppler_weight;
+
+    Eigen::Matrix4d T_VS_ = Eigen::Matrix4d::Identity();
+    bool use_extrinsic_ = true;
+    bool rebase_to_origin_ = true;
+    double dt_ = 0.1;
+
+    bool has_rebase_origin_ = false;
+    Eigen::Matrix4d T_origin_inv_ = Eigen::Matrix4d::Identity();
 
 public:
-    dicp(float doppler_weight = 0.5);
+    dicp();
     ~dicp() = default;
+
+    void SetExtrinsic(const Eigen::Matrix4d& T_VS);
+    void SetUseExtrinsic(bool use_extrinsic);
+    void SetRebaseToOrigin(bool rebase_to_origin);
+    void SetDt(double dt);
 
     bool SetSource(const pcl::PointCloud<PointXYZD>::Ptr source);
     void UpdateTarget();
@@ -50,6 +62,6 @@ public:
                float doppler_weight);
 
     void TransformPose(const Eigen::Matrix4d& T);
-    void AppendPoseToFile(double timestamp, const std::string& file_path) const;
+    void AppendPoseToFile(double timestamp, const std::string& file_path);
     const std::vector<Eigen::Matrix4d>& GetPath() const { return pose_; }
 };

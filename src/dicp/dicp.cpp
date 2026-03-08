@@ -2,12 +2,11 @@
 #include <fstream>
 #include <iomanip>
 
-dicp::dicp(float doppler_weight)
+dicp::dicp()
 {
     this->source_.reset(new pcl::PointCloud<PointXYZD>);
     this->target_.reset(new pcl::PointCloud<PointXYZD>);
 
-    this->doppler_weight = doppler_weight;
     this->init_flag.store(false);
 }
 
@@ -50,7 +49,8 @@ void dicp::ComputerPointToPlane(const Eigen::Matrix4d &T,
 #pragma omp parallel for
     for (long long i = 0; i < static_cast<long long>(N); i++)
     {
-        int tid = omp_get_thread_num();
+        const int tid = omp_get_thread_num();
+        local_res[tid].reserve(local_res[tid].size() + 1);
 
         const auto &p = this->source_->points[i];
         Eigen::Vector3d pt(p.x, p.y, p.z);
@@ -123,53 +123,47 @@ void dicp::ComputerPointToPlane(const Eigen::Matrix4d &T,
 void dicp::ComputerDoppler(const Eigen::Matrix4d &T,
                            std::vector<PointResidualJacobian> &doppler_res)
 {
-    if (!this->source_ || this->source_->empty())
+    if (!source_ || source_->empty())
         return;
 
-    Eigen::Vector3d t = T.block<3,1>(0,3);
-    Eigen::Vector3d u_t = t / 0.1;
+    const Eigen::Vector3d t = T.block<3,1>(0,3);
+    const Eigen::Vector3d u_t = t / dt_;
 
-    Eigen::Matrix3d R = T.block<3,3>(0,0);
-    Eigen::AngleAxisd aa(R);
-    Eigen::Vector3d w_t = aa.axis() * aa.angle() / 0.1;
+    const Eigen::Matrix3d R = T.block<3,3>(0,0);
+    const Eigen::AngleAxisd aa(R);
+    const Eigen::Vector3d w_t = aa.axis() * aa.angle() / dt_;
 
-    size_t N = this->source_->points.size();
+    const size_t N = source_->points.size();
 
-    Eigen::Vector3d trans(1.4199991226,
-                          0.2399997711,
-                          1.3699998855);
+    const Eigen::Vector3d trans = T_VS_.block<3,1>(0,3);
 
-    int num_threads = omp_get_max_threads();
+    const int num_threads = omp_get_max_threads();
     std::vector<std::vector<PointResidualJacobian>> local_res(num_threads);
 
 #pragma omp parallel for
     for (long long i = 0; i < static_cast<long long>(N); i++)
     {
-        int tid = omp_get_thread_num();
+        const int tid = omp_get_thread_num();
+        local_res[tid].reserve(local_res[tid].size() + 1);
 
         const auto &p = source_->points[i];
-        Eigen::Vector3d pt(p.x, p.y, p.z);
+        const Eigen::Vector3d pt(p.x, p.y, p.z);
 
         if (pt.norm() < 1e-6)
             continue;
 
-        Eigen::Vector3d d = pt.normalized();
-
-        double v_pred = d.dot(u_t - w_t.cross(trans));
+        const Eigen::Vector3d d = pt.normalized();
+        const double v_pred = d.dot(u_t - w_t.cross(trans));
 
         PointResidualJacobian res;
         res.residual = p.doppler - v_pred;
 
-        Eigen::Vector3d rot_j = -(trans.cross(d)) / 0.1;
-        Eigen::Vector3d trans_j = -d / 0.1;
+        const Eigen::Vector3d rot_j = -(trans.cross(d)) / dt_;
+        const Eigen::Vector3d trans_j = -d / dt_;
 
         res.jacobian <<
-            rot_j.x(),
-            rot_j.y(),
-            rot_j.z(),
-            trans_j.x(),
-            trans_j.y(),
-            trans_j.z();
+            rot_j.x(), rot_j.y(), rot_j.z(),
+            trans_j.x(), trans_j.y(), trans_j.z();
 
         local_res[tid].push_back(res);
     }
@@ -208,20 +202,20 @@ void dicp::Slove(Eigen::Matrix4d &T,
 
     H += lambda * Eigen::Matrix<double,6,6>::Identity();
 
-    Eigen::Matrix<double,6,1> dx = -H.ldlt().solve(b);
-
+    const Eigen::Matrix<double,6,1> dx = -H.ldlt().solve(b);
     if (!dx.allFinite())
         return;
 
     Eigen::Vector3d dtheta = dx.head<3>();
     Eigen::Vector3d dt = dx.tail<3>();
 
-    // 限制单步，防止直接炸
-    if (dtheta.norm() > 0.2) dtheta *= (0.2 / dtheta.norm());
-    if (dt.norm() > 1.0) dt *= (1.0 / dt.norm());
+    if (dtheta.norm() > 0.2)
+        dtheta *= (0.2 / dtheta.norm());
+    if (dt.norm() > 1.0)
+        dt *= (1.0 / dt.norm());
 
     Eigen::Matrix3d dR = Eigen::Matrix3d::Identity();
-    double angle = dtheta.norm();
+    const double angle = dtheta.norm();
     if (angle > 1e-12)
         dR = Eigen::AngleAxisd(angle, dtheta / angle).toRotationMatrix();
 
@@ -244,13 +238,36 @@ void dicp::TransformPose(const Eigen::Matrix4d& T)
     pose_.push_back(global_pose);
 }
 
-void dicp::AppendPoseToFile(double timestamp, const std::string& file_path) const
+void dicp::AppendPoseToFile(double timestamp, const std::string& file_path)
 {
     if (pose_.empty())
         return;
 
-    const auto& T = pose_.back();
-    Eigen::Quaterniond q(T.block<3,3>(0,0));
+    Eigen::Matrix4d T_out = pose_.back();
+
+    if (use_extrinsic_)
+    {
+        T_out = T_out * T_VS_.inverse();
+    }
+
+    if (rebase_to_origin_)
+    {
+        if (!has_rebase_origin_)
+        {
+            T_origin_inv_ = T_out.inverse();
+            has_rebase_origin_ = true;
+        }
+        T_out = T_origin_inv_ * T_out;
+    }
+
+    // 坐标系修正：x不变，y/z反号
+    Eigen::Matrix4d C = Eigen::Matrix4d::Identity();
+    C(1,1) = -1.0;
+    C(2,2) = -1.0;
+
+    T_out = C * T_out * C;
+
+    Eigen::Quaterniond q(T_out.block<3,3>(0,0));
     q.normalize();
 
     std::ofstream ofs(file_path, std::ios::app);
@@ -262,11 +279,32 @@ void dicp::AppendPoseToFile(double timestamp, const std::string& file_path) cons
 
     ofs << std::fixed << std::setprecision(6)
         << timestamp << " "
-        << T(0,3) << " "
-        << T(1,3) << " "
-        << T(2,3) << " "
+        << T_out(0,3) << " "
+        << T_out(1,3) << " "
+        << T_out(2,3) << " "
         << q.x() << " "
         << q.y() << " "
         << q.z() << " "
         << q.w() << "\n";
+}
+
+void dicp::SetExtrinsic(const Eigen::Matrix4d& T_VS)
+{
+    T_VS_ = T_VS;
+}
+
+void dicp::SetUseExtrinsic(bool use_extrinsic)
+{
+    use_extrinsic_ = use_extrinsic;
+}
+
+void dicp::SetRebaseToOrigin(bool rebase_to_origin)
+{
+    rebase_to_origin_ = rebase_to_origin;
+}
+
+void dicp::SetDt(double dt)
+{
+    if (dt > 1e-6)
+        dt_ = dt;
 }

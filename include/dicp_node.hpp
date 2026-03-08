@@ -13,14 +13,71 @@ private:
     dicp dicp_;
     int frame_id_ = 0;
 
+    std::string doppler_mode;
+    std::string file_path;
+    std::string topic_name;
+    double doppler_weight;
+    double doppler_weight_max;
+    double topic_hz;
+
 public:
-    dicp_node() : Node("dicp_node"), dicp_(0.01)
+    dicp_node() : Node("dicp_node"), dicp_()
     {
 
-        std::ofstream("./dicp_path.txt", std::ios::trunc).close();
+        this->declare_parameter("file_path", "./dicp_path.txt");
+        this->declare_parameter("topic_name", "/points");
+        this->declare_parameter("topic_hz", 10.0);
+        this->declare_parameter("doppler_mode", "adaptive");
+        this->declare_parameter("doppler_weight", 0.01);
+        this->declare_parameter("doppler_weight_max", 0.01);
+
+        file_path = this->get_parameter("file_path").as_string();
+        topic_name = this->get_parameter("topic_name").as_string();
+        topic_hz = this->get_parameter("topic_hz").as_double();
+        doppler_mode = this->get_parameter("doppler_mode").as_string();
+        doppler_weight = this->get_parameter("doppler_weight").as_double();
+        doppler_weight_max = this->get_parameter("doppler_weight_max").as_double();
+
+        this->declare_parameter("use_extrinsic", true);
+        this->declare_parameter("rebase_to_origin", true);
+
+        this->declare_parameter("extrinsic.tx", 0.0);
+        this->declare_parameter("extrinsic.ty", 0.0);
+        this->declare_parameter("extrinsic.tz", 0.0);
+        this->declare_parameter("extrinsic.qx", 0.0);
+        this->declare_parameter("extrinsic.qy", 0.0);
+        this->declare_parameter("extrinsic.qz", 0.0);
+        this->declare_parameter("extrinsic.qw", 1.0);
+
+        bool use_extrinsic_ = this->get_parameter("use_extrinsic").as_bool();
+        bool rebase_to_origin_ = this->get_parameter("rebase_to_origin").as_bool();
+
+        const double tx = this->get_parameter("extrinsic.tx").as_double();
+        const double ty = this->get_parameter("extrinsic.ty").as_double();
+        const double tz = this->get_parameter("extrinsic.tz").as_double();
+        const double qx = this->get_parameter("extrinsic.qx").as_double();
+        const double qy = this->get_parameter("extrinsic.qy").as_double();
+        const double qz = this->get_parameter("extrinsic.qz").as_double();
+        const double qw = this->get_parameter("extrinsic.qw").as_double();
+
+        Eigen::Quaterniond q(qw, qx, qy, qz);
+        q.normalize();
+
+        Eigen::Matrix4d T_VS = Eigen::Matrix4d::Identity();
+        T_VS.block<3,3>(0,0) = q.toRotationMatrix();
+        T_VS(0,3) = tx;
+        T_VS(1,3) = ty;
+        T_VS(2,3) = tz;
+
+        dicp_.SetExtrinsic(T_VS);
+        dicp_.SetUseExtrinsic(use_extrinsic_);
+        dicp_.SetRebaseToOrigin(rebase_to_origin_);
+        dicp_.SetDt(1.0 / topic_hz);
+
+        std::ofstream(file_path, std::ios::trunc).close();
 
         sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-            "/points",
+            topic_name,
             rclcpp::SensorDataQoS(),
             std::bind(&dicp_node::PointCallBack, this, std::placeholders::_1)
         );
@@ -29,9 +86,6 @@ public:
     }
 
     ~dicp_node() = default;
-    // {
-    //     dicp_.SavePath("/home/fengruhua/Doppler/Doppler-ICP-Cpp/dicp_path.txt");
-    // }
 
 private:
     void PointCallBack(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
@@ -48,7 +102,7 @@ private:
 
         if (!dicp_.SetSource(cloud))
         {
-            dicp_.AppendPoseToFile(time / 10, "./dicp_path.txt");
+            dicp_.AppendPoseToFile(time / topic_hz, file_path);
             RCLCPP_INFO(this->get_logger(), "first frame, initialize target only");
             return;
         }
@@ -69,12 +123,12 @@ private:
                 break;
             }
 
-            float w = (iter < 2) ? 0.0f : 0.01f;
+            const float w = GetDopplerWeight(iter);
             dicp_.Slove(T_, icp_res, doppler_res, w);
         }
 
         dicp_.TransformPose(T_);
-        dicp_.AppendPoseToFile((++time) / 10, "./dicp_path.txt");
+        dicp_.AppendPoseToFile((++time) / topic_hz, file_path);
         dicp_.UpdateTarget();
 
         const auto& path = dicp_.GetPath();
@@ -86,4 +140,26 @@ private:
             T_(0,3), T_(1,3), T_(2,3),
             Tw(0,3), Tw(1,3), Tw(2,3));
     }
+
+    float GetDopplerWeight(int iter) const
+    {
+        if (doppler_mode == "off")
+            return 0.0f;
+
+        if (doppler_mode == "fixed")
+            return static_cast<float>(doppler_weight);
+
+        if (doppler_mode == "adaptive")
+        {
+            if (iter < 2)
+                return 0.0f;
+
+            float ratio = static_cast<float>(iter - 1) / 8.0f;
+            if (ratio > 1.0f) ratio = 1.0f;
+            return static_cast<float>(doppler_weight_max) * ratio;
+        }
+
+        return 0.0f;
+    }
+
 };
