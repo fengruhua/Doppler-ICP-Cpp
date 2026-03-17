@@ -2,7 +2,8 @@
 #define PCL_NO_PRECOMPILE
 
 #include <pcl/point_types.h>
-
+#include <pcl/filters/voxel_grid.h>
+#include <pcl/filters/impl/voxel_grid.hpp>
 struct EIGEN_ALIGN16 PointXYZD
 {
     PCL_ADD_POINT4D;

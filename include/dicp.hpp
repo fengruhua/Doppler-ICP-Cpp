@@ -7,7 +7,11 @@
 
 #include "utils.hpp"
 
+#include <Eigen/Core>
+#include <Eigen/Geometry>
 #include <Eigen/Dense>
+#include <sophus/se3.hpp>
+
 #include <pcl/point_cloud.h>
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/kdtree/impl/kdtree_flann.hpp>

@@ -49,7 +49,7 @@ def generate_launch_description():
         name='doppler_dataset',
         parameters=[
             {'data_path': './Doppler-ICP-Cpp/dataset/carla-town04-straight-walls/point_clouds'},
-            {'frame_rate': 2.0},
+            {'frame_rate': 0.1},
             {'point_topic': '/points'},
             {'frame_id': '/map'},
             {'loop': False}
@@ -74,6 +74,6 @@ def generate_launch_description():
 
     return LaunchDescription([
         delayed_neu_node,
-        rviz_node,
+        # rviz_node,
         RegisterEventHandler(shutdown_event)
     ])

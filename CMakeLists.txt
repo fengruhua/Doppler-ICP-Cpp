@@ -31,6 +31,8 @@ find_package(visualization_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(GTSAM REQUIRED)
 find_package(rosbag2_cpp REQUIRED)
+find_package(Sophus REQUIRED)
+find_package(fmt REQUIRED)
 
 # ========================
 # OpenMP
@@ -48,6 +50,7 @@ endif()
 set(COMMON_SOURCES
     src/dicp/optimizer.cpp
     src/dicp/dicp.cpp
+    src/dicp/dicp_se3.cpp
 )
 
 # ========================
@@ -130,10 +133,12 @@ target_link_libraries(doppler_icp_node
     ${PCL_LIBRARIES}
     yaml-cpp
     glog::glog
+    fmt::fmt
     gtsam
 )
 
 target_link_libraries(dataset_node
+    fmt::fmt
     ${PCL_LIBRARIES}
 )
 

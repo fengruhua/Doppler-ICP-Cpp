@@ -41,7 +41,13 @@ void dicp::ComputerPointToPlane(const Eigen::Matrix4d &T,
     Eigen::Matrix3d r = T.block<3,3>(0,0);
     Eigen::Vector3d t = T.block<3,1>(0,3);
 
-    size_t N = this->source_->points.size();
+    pcl::PointCloud<PointXYZD>::Ptr cloud_filtered(new pcl::PointCloud<PointXYZD>);
+    pcl::VoxelGrid<PointXYZD> voxel;
+    voxel.setInputCloud(this->source_);
+    voxel.setLeafSize(0.1f, 0.1f, 0.1f);   // 按需调整，比如 0.1 / 0.2 / 0.3
+    voxel.filter(*cloud_filtered);
+
+    size_t N = cloud_filtered->points.size();
 
     int num_threads = omp_get_max_threads();
     std::vector<std::vector<PointResidualJacobian>> local_res(num_threads);
@@ -52,7 +58,7 @@ void dicp::ComputerPointToPlane(const Eigen::Matrix4d &T,
         const int tid = omp_get_thread_num();
         local_res[tid].reserve(local_res[tid].size() + 1);
 
-        const auto &p = this->source_->points[i];
+        const auto &p = cloud_filtered->points[i];
         Eigen::Vector3d pt(p.x, p.y, p.z);
         Eigen::Vector3d pt_trans = r * pt + t;
 
@@ -67,7 +73,7 @@ void dicp::ComputerPointToPlane(const Eigen::Matrix4d &T,
         if (this->kdtree_.nearestKSearch(search_point, 5, idx, dis) < 5)
             continue;
 
-        if (dis[4] > 0.3f * 0.3f)
+        if (dis[4] > 0.5f * 0.5f)
             continue;
 
         Eigen::Matrix<double, 3, 5> neigh;
@@ -245,11 +251,13 @@ void dicp::AppendPoseToFile(double timestamp, const std::string& file_path)
 
     Eigen::Matrix4d T_out = pose_.back();
 
+    // 先根据外参，把 sensor 轨迹转成 vehicle 轨迹
     if (use_extrinsic_)
     {
         T_out = T_out * T_VS_.inverse();
     }
 
+    // 再把第一帧归零，方便和 GT 对齐
     if (rebase_to_origin_)
     {
         if (!has_rebase_origin_)
@@ -257,15 +265,9 @@ void dicp::AppendPoseToFile(double timestamp, const std::string& file_path)
             T_origin_inv_ = T_out.inverse();
             has_rebase_origin_ = true;
         }
+
         T_out = T_origin_inv_ * T_out;
     }
-
-    // 坐标系修正：x不变，y/z反号
-    Eigen::Matrix4d C = Eigen::Matrix4d::Identity();
-    C(1,1) = -1.0;
-    C(2,2) = -1.0;
-
-    T_out = C * T_out * C;
 
     Eigen::Quaterniond q(T_out.block<3,3>(0,0));
     q.normalize();

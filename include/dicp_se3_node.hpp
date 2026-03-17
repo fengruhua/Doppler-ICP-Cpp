@@ -1,4 +1,4 @@
-#include "dicp.hpp"
+#include "dicp_se3.hpp"
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
@@ -10,7 +10,7 @@ class dicp_node : public rclcpp::Node
 {
 private:
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_;
-    dicp dicp_;
+    dicp_se3 dicp_;
     int frame_id_ = 0;
 
     std::string doppler_mode;
@@ -69,9 +69,6 @@ public:
         T_VS(1,3) = ty;
         T_VS(2,3) = tz;
 
-        dicp_.SetExtrinsic(T_VS);
-        dicp_.SetUseExtrinsic(use_extrinsic_);
-        dicp_.SetRebaseToOrigin(rebase_to_origin_);
         dicp_.SetDt(1.0 / topic_hz);
 
         std::ofstream(file_path, std::ios::trunc).close();
@@ -100,14 +97,17 @@ void PointCallBack(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
         RCLCPP_WARN(this->get_logger(), "empty cloud");
         return;
     }
+    // std::cout << "11111111111111" <<std::endl;
 
-    // voxel filter
     pcl::PointCloud<PointXYZD>::Ptr cloud_filtered(new pcl::PointCloud<PointXYZD>);
     cloud_filtered = cloud;
+
     // pcl::VoxelGrid<PointXYZD> voxel;
     // voxel.setInputCloud(cloud);
-    // voxel.setLeafSize(0.1f, 0.1f, 0.1f);   // 按需调整，比如 0.1 / 0.2 / 0.3
+    // voxel.setLeafSize(0.1f, 0.1f, 0.1f);
     // voxel.filter(*cloud_filtered);
+
+    // std::cout << "11111111111111" <<std::endl;
 
     if (cloud_filtered->empty())
     {
@@ -121,62 +121,122 @@ void PointCallBack(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
         RCLCPP_INFO(this->get_logger(), "first frame, initialize target only");
         return;
     }
+    // std::cout << "11111111111111" <<std::endl;
 
-    Eigen::Matrix4d T_ = Eigen::Matrix4d::Identity();
+    Eigen::Vector3d pos = Eigen::Vector3d::Zero();
+    Sophus::SO3d rot = Sophus::SO3d();
 
-    for (int iter = 0; iter < 20; iter++)
+    const int max_iter = 50;
+    const double cost_eps = 1e-8;
+    const double trans_eps = 1e-8;
+    const double rot_eps = 1e-8;
+
+    double last_cost = std::numeric_limits<double>::infinity();
+    double curr_cost = 0.0;
+
+    int used_iter = 0;
+
+    for (int iter = 0; iter < max_iter; ++iter)
     {
-        std::vector<PointResidualJacobian> icp_res;
-        std::vector<PointResidualJacobian> doppler_res;
+        used_iter = iter + 1;
 
-        dicp_.ComputerPointToPlane(T_, icp_res);
-        dicp_.ComputerDoppler(T_, doppler_res);
+        std::vector<PointResidualJacobian> res;
+        const double doppler_weight = GetDopplerWeight(iter);
+        // std::cout << "11111111111111" <<std::endl;
 
-        if (icp_res.size() < 20)
+        dicp_.ComputerRes(pos, rot, res, doppler_weight);
+        // std::cout << "11111111111111" <<std::endl;
+
+        if (res.size() < 20)
         {
-            RCLCPP_WARN(this->get_logger(), "too few correspondences: %zu", icp_res.size());
+            RCLCPP_WARN(this->get_logger(), "too few correspondences: %zu", res.size());
             break;
         }
 
-        const float w = GetDopplerWeight(iter);
-        dicp_.Slove(T_, icp_res, doppler_res, w);
+        Eigen::Vector3d pos_prev = pos;
+        Sophus::SO3d rot_prev = rot;
+
+        curr_cost = 0.0;
+        dicp_.Solve(pos, rot, res, curr_cost);
+
+        Eigen::Vector3d dpos = pos - pos_prev;
+        Eigen::Vector3d dtheta = (rot_prev.inverse() * rot).log();
+
+        double cost_change = std::abs(last_cost - curr_cost);
+
+        // RCLCPP_INFO(this->get_logger(),
+        //     "iter %d | cost %.8f | dcost %.8f | dtrans %.8e | drot %.8e | res %zu",
+        //     iter,
+        //     curr_cost,
+        //     cost_change,
+        //     dpos.norm(),
+        //     dtheta.norm(),
+        //     res.size());
+
+        if (cost_change < cost_eps ||
+            (dpos.norm() < trans_eps && dtheta.norm() < rot_eps))
+        {
+
+            if (iter <= 10)
+            {
+                last_cost = curr_cost;
+                continue;
+            }
+
+            else{
+                RCLCPP_INFO(this->get_logger(),
+                    "converged at iter %d | cost %.8f | dcost %.8f | dtrans %.8e | drot %.8e",
+                    iter,
+                    curr_cost,
+                    cost_change,
+                    dpos.norm(),
+                    dtheta.norm());
+                break;
+            }
+        }
+
+        last_cost = curr_cost;
     }
+
+    Eigen::Matrix4d T_ = dicp_.GetRelativeTransform(pos, rot);
 
     dicp_.TransformPose(T_);
     dicp_.AppendPoseToFile((++time) / topic_hz, file_path);
-    dicp_.UpdateTarget();
+    dicp_.SetTarget();
 
-    const auto& path = dicp_.GetPath();
+    const auto& path = dicp_.GetPoses();
     const auto& Tw = path.back();
 
     RCLCPP_INFO(this->get_logger(),
-        "frame %d raw: %zu filtered: %zu | local: %.3f %.3f %.3f | global: %.3f %.3f %.3f",
+        "frame %d raw: %zu filtered: %zu | iter: %d | local: %.3f %.3f %.3f | global: %.3f %.3f %.3f",
         frame_id_++,
         cloud->size(),
         cloud_filtered->size(),
+        used_iter,
         T_(0,3), T_(1,3), T_(2,3),
         Tw(0,3), Tw(1,3), Tw(2,3));
 }
 
-    float GetDopplerWeight(int iter) const
+
+float GetDopplerWeight(int iter) const
+{
+    if (doppler_mode == "off")
+        return 0.0f;
+
+    if (doppler_mode == "fixed")
+        return static_cast<float>(doppler_weight);
+
+    if (doppler_mode == "adaptive")
     {
-        if (doppler_mode == "off")
+        if (iter < 5)
             return 0.0f;
 
-        if (doppler_mode == "fixed")
-            return static_cast<float>(doppler_weight);
-
-        if (doppler_mode == "adaptive")
-        {
-            if (iter < 2)
-                return 0.0f;
-
-            float ratio = static_cast<float>(iter - 1) / 8.0f;
-            if (ratio > 1.0f) ratio = 1.0f;
-            return static_cast<float>(doppler_weight_max) * ratio;
-        }
-
-        return 0.0f;
+        float ratio = static_cast<float>(iter - 1) / 8.0f;
+        if (ratio > 1.0f) ratio = 1.0f;
+        return static_cast<float>(doppler_weight_max) * ratio;
     }
+
+    return 0.0f;
+}
 
 };

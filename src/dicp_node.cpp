@@ -32,7 +32,7 @@
 #include <csignal>
 #include <atomic>
 
-#include "dicp_node.hpp"
+#include "dicp_se3_node.hpp"
 
 int main(int argc, char** argv)
 {
